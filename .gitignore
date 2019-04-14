@@ -1,0 +1,8 @@
+/temp/*
+/depend/*
+/tiles/*
+*.zip
+*.h5
+/__pycache__/*
+/video/*
+.idea/*
