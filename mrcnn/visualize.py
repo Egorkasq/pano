@@ -180,25 +180,23 @@ def save_detect_info(image, boxes, masks, track):
     os.chdir(root_dir)
     temp = []
     coord = track
-    contours = None
-    verts = None
     N = boxes.shape[0]
 
     for i in range(N):
         mask = masks[:, :, i]
-        padded_mask = np.zeros(
-                (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+        padded_mask = np.zeros((mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
         padded_mask[1:-1, 1:-1] = mask
         contours = find_contours(padded_mask, 0.5)
         for verts in contours:
-
             for j in range(verts.shape[0]):
                 for index in range(verts.shape[1]):
                     if index % 2 == 0:
                         verts[j][index] = 0 - verts[j][index]
+                    else:
+                        verts[j][index] = image.shape[1] - verts[j][index]
             temp = temp + verts.tolist()
     data = {
-        "impossibleAreas": [{
+        "impassableAreas": [{
             "type": "Area",
             "coordinates":
                 temp
@@ -257,7 +255,7 @@ def save_detect_info1(image, boxes, masks, track):
         }]
     }
     json.dump(data, codecs.open('detect_info1.json', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
-    print("detect info created")
+    print("detect info created1")
 
 
 def vizualize_polygons(image, masks):

@@ -2,22 +2,20 @@ import numpy as np
 import cv2
 import os
 import json
-import numpy
 import shutil
 import math
-import random
+
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 
 
 root_dir = os.path.abspath('./result')
 video_path = os.path.abspath('./video')
-titles_path = os.path.abspath('./tiles')
-image_path = os.path.abspath('./input_img')
-image_path1 = os.path.abspath('./temp')
+titles_path = os.path.abspath('./titles')
 
 
 class Map:
+
     def __init__(self, image, zoom=0, tile_size=256):
         self.image = image
         self.zoom = zoom
@@ -45,73 +43,12 @@ class Map:
             for j in range(0, self.line, self.tile_size):
                 tempImg = self.image[i: i + self.tile_size, j: j + self.tile_size]
                 name = str(i // self.tile_size) + '_' + str(j // self.tile_size)
-
-                cv2.imwrite(str(name) + '.jpg', tempImg)
+                cv2.imwrite('.jpg'.format(str(name)), tempImg)
         os.chdir(root_dir)
         return 0
 
-    def convert_to_map(self, x, y, revert=False):
-        """
-        False: transform img's coordinates to map coord
-        True: transform map's coord to img
-        :param x: coord x
-        :param y: coord y
-        """
-        height_map, wight_map = self.card_size()
-        kef_x = height_map / self.line
-        kef_y = wight_map / self.column
-        if not revert:
-            x = round(x * kef_x)
-            y = round(y * kef_y)
-        else:
-            x = round(x / kef_x)
-            y = round(y / kef_y)
-        return x, y
 
-    def find_tile(self, x, y):
-        """
-        Return tiles, witch contains coord x and y
-        """
-        folder = []
-        paths = list(os.walk(titles_path))
-        for images in paths[0][2]:
-            folder.append(images)
-        folder.sort()
-        print(folder)
-        temp = 0
-        x = int(x / self.line)
-        y = int(y / self.column)
-        mat_size_x = self.line // self.tile_size
-        mat_size_y = self.column // self.tile_size
-        matrix = numpy.array(range(mat_size_y * mat_size_x))
-        matrix.shape = (mat_size_x, mat_size_y)
-        #for i in range(mat_size_y):
-        #    for j in range(mat_size_x):
-        #        matrix[i][j] = folder[temp]
-        #        temp += 1
-        print(matrix)
-        return matrix[x][y]
-    '''
-    @staticmethod
-    def card_size():
-        folder = []
-        map_size = []
-        average = 0
-        os.chdir(image_path)
-        paths = list(os.walk(image_path))
-        for image in paths[0][2][0:]:
-            folder.append(image)
-            meta_data = ImageMetaData(image)
-            latlng = meta_data.get_lat_lng()
-            if latlng is True:
-                average = average + latlng[2]
-        average = average / len(folder)
-        map_size[0] = math.tan(70.42) * average[2]
-        map_size[1] = math.tan(43.3) * average[2]
-        return map_size
-    '''
-
-    def card_size(self):
+    def card_size1(self):
         folder = []
         map_size = []
         average = 0
@@ -123,12 +60,12 @@ class Map:
             latlng = meta_data.get_lat_lng()
             average = average + latlng[2]
         average = average / len(folder)
-        print('height ', average)
+        print('height{}'.format(average))
         map_size.append(math.tan(math.radians(70.42 / 2)) * average * 2 * self.line / self.tile_size)
         map_size.append(math.tan(math.radians(43.3 / 2)) * average * 2 * self.column / self.tile_size)
         return map_size
 
-    def card_size1(self):
+    def card_size(self):
         folder = []
         map_size = []
         average = 0
@@ -201,12 +138,11 @@ class ImageMetaData(object):
 
         return d + (m / 60.0) + (s / 3600.0)
 
-    def get_lat_lng(self):
+    def get_lat_lng(self, height_=True):
         """
         Returns the latitude and longitude, if available,
         from the provided exif_data (obtained through get_exif_data above)
         """
-        gps_altitude = None
         lat = None
         lng = None
         height = None
@@ -219,7 +155,6 @@ class ImageMetaData(object):
             gps_longitude_ref = self.get_if_exist(gps_info, 'GPSLongitudeRef')
             gps_altitude = self.get_if_exist(gps_info, 'GPSAltitude')
             gps_altitude_ref = self.get_if_exist(gps_info, 'GPSAltitudeRef')
-
             #height = self.convert_to_degress(gps_altitude)
             height = gps_altitude[0] // gps_altitude[1] / 10
 
@@ -231,10 +166,13 @@ class ImageMetaData(object):
                 if gps_longitude_ref != "E":
                     lng = 0 - lng
 
-        return lat, lng, height
+        if height_:
+            return lat, lng, height
+        else:
+            return lat, lng
 
 
-def screen_video(video_file, fps=25):
+def screen_video(video_file, image_path, fps=15):
     """
     This func create tiles from videofile
     :return: return every 'fps' frame
@@ -242,6 +180,8 @@ def screen_video(video_file, fps=25):
     c = 0
     name = 0
     cap = cv2.VideoCapture(video_file)
+    assert os.path.exists(video_file)
+
     if os.path.exists(image_path):
         shutil.rmtree(image_path)
     os.makedirs(image_path)
@@ -250,7 +190,7 @@ def screen_video(video_file, fps=25):
         flag, img = cap.read()
         if flag == 0:
             break
-        if c % fps == 0:                        # каждый 25 кадр
+        if c % fps == 0:
             cv2.imwrite('{}/{:06d}.jpg'.format(image_path, name), img)
             name += 1
         c = c + 1
@@ -258,8 +198,9 @@ def screen_video(video_file, fps=25):
     return 0
 
 
-def create_panorama():
+def create_panorama(image_path):
     folder = []
+    good_point = []
     os.chdir(image_path)
     paths = list(os.walk(image_path))
     for image in paths[0][2][0:]:
@@ -268,7 +209,8 @@ def create_panorama():
     print(folder)
     img2 = cv2.imread(folder[0], 1)
     folder.pop(0)
-    print('find', len(folder) + 1, 'images for steaching')
+    print('find {} images for steaching'.format(len(folder) + 1))
+
     for file in folder:
         img1 = cv2.imread(file, 1)
         orb = cv2.ORB_create()
@@ -276,7 +218,11 @@ def create_panorama():
         kp2, des2 = orb.detectAndCompute(img2, None)
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         matches = bf.match(des1, des2)
+
         matches = sorted(matches, key=lambda x: x.distance)
+        #matches = matches[:11]
+        matches = matches[:int(len(matches) * 0.3)]
+        assert len(matches) > 10
         dst_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
         src_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
         M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
@@ -289,63 +235,23 @@ def create_panorama():
         [xmin, ymin] = np.int32(pts.min(axis=0).ravel() - 0.5)
         [xmax, ymax] = np.int32(pts.max(axis=0).ravel() + 0.5)
         t = [-xmin, -ymin]
+        print(t)
         Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
         result = cv2.warpPerspective(img2, Ht.dot(M), (xmax - xmin, ymax - ymin))
         result[t[1]:h1 + t[1], t[0]:w1 + t[0]] = img1
         img2 = result
 
-    #if os.path.exists(root_dir):
-    #    shutil.rmtree(root_dir)
-    #os.makedirs(root_dir)
+
+    if os.path.exists(root_dir):
+        shutil.rmtree(root_dir)
+    os.makedirs(root_dir)
+    #with open('points.json', 'w') as f:
+    #    json.dump(point, f)
+
     os.chdir(root_dir)
     result = crop(result)
     result = resize(result, 256)
-    print('map created', result.shape[:2])
-    return result
 
-
-def create_panorama1():
-    folder = []
-    os.chdir(image_path)
-    paths = list(os.walk(image_path))
-    for image in paths[0][2][0:]:
-        folder.append(image)
-    folder.sort()
-    print(folder)
-    img2 = cv2.imread(folder[0], 1)
-    folder.pop(0)
-    print('find', len(folder) + 1, 'images for steaching')
-    for file in folder:
-        img1 = cv2.imread(file, 1)
-        orb = cv2.ORB_create()
-        kp1, des1 = orb.detectAndCompute(img1, None)
-        kp2, des2 = orb.detectAndCompute(img2, None)
-        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
-        matches = bf.match(des1, des2)
-        matches = sorted(matches, key=lambda x: x.distance)
-        dst_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
-        src_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
-        M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-        h1, w1 = img1.shape[:2]
-        h2, w2 = img2.shape[:2]
-        pts1 = np.float32([[0, 0], [0, h1], [w1, h1], [w1, 0]]).reshape(-1, 1, 2)
-        pts2 = np.float32([[0, 0], [0, h2], [w2, h2], [w2, 0]]).reshape(-1, 1, 2)
-        pts2 = cv2.perspectiveTransform(pts2, M)
-        pts = np.concatenate((pts1, pts2), axis=0)
-        [xmin, ymin] = np.int32(pts.min(axis=0).ravel() - 0.5)
-        [xmax, ymax] = np.int32(pts.max(axis=0).ravel() + 0.5)
-        t = [-xmin, -ymin]
-        Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
-        result = cv2.warpPerspective(img2, Ht.dot(M), (xmax - xmin, ymax - ymin))
-        result[t[1]:h1 + t[1], t[0]:w1 + t[0]] = img1
-        img2 = result
-
-    #if os.path.exists(root_dir):
-    #    shutil.rmtree(root_dir)
-    #os.makedirs(root_dir)
-    os.chdir(root_dir)
-    result = crop(result)
-    result = resize(result, 256)
     print('map created', result.shape[:2])
     return result
 
@@ -384,17 +290,17 @@ def get_distanse(image1, image2):
     """
     :param image1:
     :param image2:
-    :return: distance between tho img
+    :return: distance between two images
     """
     meta_data_1 = ImageMetaData(image1)
     meta_data_2 = ImageMetaData(image2)
     latlng_1 = meta_data_1.get_lat_lng()
     latlng_2 = meta_data_2.get_lat_lng()
-    print(latlng_1)
-    print(latlng_2)
+    print('coord first img{}'.format(latlng_1))
+    print('coord second img{}'.format(latlng_2))
+
     if latlng_1 and latlng_2 is not None:
         dist = math.acos(math.sin(math.radians(latlng_1[0])) * math.sin(math.radians(latlng_2[0])) +
                          math.cos(math.radians(latlng_1[0])) * math.cos(math.radians(latlng_2[0])) *
                          math.cos(math.radians(latlng_1[1] - latlng_2[1]))) * 6371 * 1000
         return dist
-
