@@ -38,6 +38,7 @@ def create_panorama(image_path):
     print('find {} images for steaching'.format(len(folder) + 1))
     for file in folder:
         image2 = cv2.imread(file, 1)
+
         #image2 = cv2.GaussianBlur(cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY), (5, 5), 0)
         orb = cv2.ORB_create()
         kp1, des1 = orb.detectAndCompute(image1, None)

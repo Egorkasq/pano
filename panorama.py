@@ -4,14 +4,12 @@ import os
 import json
 import shutil
 import math
-
+import codecs
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
-
-
 root_dir = os.path.abspath('./result')
 video_path = os.path.abspath('./video')
-titles_path = os.path.abspath('./titles')
+titles_path = os.path.abspath('./tiles')
 
 
 class Map:
@@ -43,11 +41,11 @@ class Map:
             for j in range(0, self.line, self.tile_size):
                 tempImg = self.image[i: i + self.tile_size, j: j + self.tile_size]
                 name = str(i // self.tile_size) + '_' + str(j // self.tile_size)
-                cv2.imwrite('.jpg'.format(str(name)), tempImg)
+                cv2.imwrite('{}.jpg'.format(str(name)), tempImg)
         os.chdir(root_dir)
         return 0
 
-
+    '''
     def card_size1(self):
         folder = []
         map_size = []
@@ -63,9 +61,9 @@ class Map:
         print('height{}'.format(average))
         map_size.append(math.tan(math.radians(70.42 / 2)) * average * 2 * self.line / self.tile_size)
         map_size.append(math.tan(math.radians(43.3 / 2)) * average * 2 * self.column / self.tile_size)
-        return map_size
-
-    def card_size(self):
+        map_size
+    '''
+    def card_size(self, image_path):
         folder = []
         map_size = []
         average = 0
@@ -81,7 +79,6 @@ class Map:
         map_size.append(math.tan(math.radians(60.3 / 2)) * 2 * 162 / temp.shape[0] * self.column)
         map_size.append(math.tan(math.radians(70.42 / 2)) * 2 * 162 / temp.shape[1] * self.line)
         return map_size
-
 
 class ImageMetaData(object):
     '''
@@ -199,61 +196,101 @@ def screen_video(video_file, image_path, fps=15):
 
 
 def create_panorama(image_path):
-    folder = []
-    good_point = []
+
     os.chdir(image_path)
     paths = list(os.walk(image_path))
-    for image in paths[0][2][0:]:
-        folder.append(image)
+    folder = paths[0][2][0:]
     folder.sort()
-    print(folder)
-    img2 = cv2.imread(folder[0], 1)
+    print('find {} images for stitching:{}'.format(len(folder), folder))
+    base_image = cv2.imread(folder[0], 1)
     folder.pop(0)
-    print('find {} images for steaching'.format(len(folder) + 1))
-
+    base_image_data = ImageMetaData(folder[0])
+    data = {
+        base_image_data, base_image_data.get_lat_lng(), '\n'
+    }
     for file in folder:
-        img1 = cv2.imread(file, 1)
+
+        next_image = cv2.imread(file, 1)
         orb = cv2.ORB_create()
-        kp1, des1 = orb.detectAndCompute(img1, None)
-        kp2, des2 = orb.detectAndCompute(img2, None)
+        kp1, des1 = orb.detectAndCompute(next_image, None)
+        kp2, des2 = orb.detectAndCompute(base_image, None)
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         matches = bf.match(des1, des2)
-
         matches = sorted(matches, key=lambda x: x.distance)
-        #matches = matches[:11]
-        matches = matches[:int(len(matches) * 0.3)]
+        matches = matches[:int(len(matches) * 0.4)]
         assert len(matches) > 10
+
         dst_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
         src_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
         M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC, 5.0)
-        h1, w1 = img1.shape[:2]
-        h2, w2 = img2.shape[:2]
+        h1, w1 = next_image.shape[:2]
+        h2, w2 = base_image.shape[:2]
         pts1 = np.float32([[0, 0], [0, h1], [w1, h1], [w1, 0]]).reshape(-1, 1, 2)
         pts2 = np.float32([[0, 0], [0, h2], [w2, h2], [w2, 0]]).reshape(-1, 1, 2)
         pts2 = cv2.perspectiveTransform(pts2, M)
         pts = np.concatenate((pts1, pts2), axis=0)
         [xmin, ymin] = np.int32(pts.min(axis=0).ravel() - 0.5)
         [xmax, ymax] = np.int32(pts.max(axis=0).ravel() + 0.5)
+
         t = [-xmin, -ymin]
-        print(t)
         Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
-        result = cv2.warpPerspective(img2, Ht.dot(M), (xmax - xmin, ymax - ymin))
-        result[t[1]:h1 + t[1], t[0]:w1 + t[0]] = img1
-        img2 = result
 
+        if t[0] > 0:
+            next_image = next_image[:int(h1 - 0.5 * h1 + t[0] / 2), :w1]
+        elif t[0] < 0:
+            next_image = next_image[int(w1 - 0.5 * w1 + t[0] / 2):, :w1]
+        if t[1] > 0:
+            next_image = next_image[:h1, int(w1 - 0.5 * w1 + t[0] / 2):w1]
+        elif t[1] < 0:
+            next_image = next_image[:h1, :int(w1 - 0.5 * w1 + t[0] / 2)]
+        h1, w1 = next_image.shape[:2]
+        result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
+        result[t[1]:h1 + t[1], t[0]:w1 + t[0]] = next_image
+        crop(result)
 
+        img_data = ImageMetaData(file)
+        img_data = {
+            img_data, img_data.get_lat_lng(), '\n'
+        }
+        print(type(data))
+        print(type(img_data))
+        data.union(img_data)
+        base_image = result
+
+    '''
     if os.path.exists(root_dir):
         shutil.rmtree(root_dir)
     os.makedirs(root_dir)
-    #with open('points.json', 'w') as f:
-    #    json.dump(point, f)
+    with open('points.json', 'w') as f:
+        json.dump(point, f)
+    '''
 
     os.chdir(root_dir)
     result = crop(result)
     result = resize(result, 256)
-
-    print('map created', result.shape[:2])
+    print('map created {}'.format(result.shape))
+    json.dump(data, codecs.open('geo_info.json', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
     return result
+
+
+def bind_geo(image_path, save_info=False):
+    """
+    :return: .txt with geo loc every image
+    """
+    data = None
+    path = list(os.walk(image_path))
+    folder = path[0][2][0:]
+    folder.sort()
+    for image in folder:
+        image = ImageMetaData(image)
+        img_data = {
+            image, image.get_lat_lng(), '\n'
+        }
+        data += img_data
+
+    if save_info:
+        json.dump(data, codecs.open('geo_info.json', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
+    return 0
 
 
 def resize(image, tile_size):

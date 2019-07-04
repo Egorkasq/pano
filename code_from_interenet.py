@@ -3,7 +3,7 @@ import sys
 import cv2
 import math
 import numpy as np
-import utils
+#import utils
 
 from numpy import linalg
 
@@ -37,13 +37,8 @@ class Stitch(object):
             sys.exit(-1)
 
         self.dir_list = map(lambda x: os.path.join(image_dir, x), self.dir_list)
-
         self.dir_list = filter(lambda x: x != key_frame, self.dir_list)
-
         base_img_rgb = cv2.imread(key_frame)
-        if base_img_rgb == None:
-            raise IOError("%s doesn't exist" % key_frame)
-
         final_img = self.stitch(base_img_rgb, 0)
 
     def filter_matches(self, matches, ratio=0.75):
@@ -111,7 +106,8 @@ class Stitch(object):
         base_img = cv2.GaussianBlur(cv2.cvtColor(base_img_rgb, cv2.COLOR_BGR2GRAY), (5, 5), 0)
 
         # Use the SIFT feature detector
-        detector = cv2.cv2.ORB_create()
+        #detector = cv2.SIFT()
+        detector = cv2.xfeatures2d.SIFT_create()
         # Find key points in base image for motion estimation
         base_features, base_descs = detector.detectAndCompute(base_img, None)
 
@@ -130,24 +126,12 @@ class Stitch(object):
         next_img_rgb = cv2.imread(next_img_path)
         next_img = cv2.GaussianBlur(cv2.cvtColor(next_img_rgb, cv2.COLOR_BGR2GRAY), (5, 5), 0)
 
-
-
         # Find points in the next frame
         next_features, next_descs = detector.detectAndCompute(next_img, None)
-
         matches = matcher.knnMatch(next_descs, trainDescriptors=base_descs, k=2)
-
-
         matches_subset = self.filter_matches(matches)
-
-
-
         distance = self.imageDistance(matches_subset)
-
-
-
         averagePointDistance = distance / float(len(matches_subset))
-
 
         kp1 = []
         kp2 = []
@@ -158,10 +142,7 @@ class Stitch(object):
 
         p1 = np.array([k.pt for k in kp1])
         p2 = np.array([k.pt for k in kp2])
-
         H, status = cv2.findHomography(p1, p2, cv2.RANSAC, 5.0)
-
-
         inlierRatio = float(np.sum(status)) / float(len(status))
 
         if (closestImage == None or inlierRatio > closestImage['inliers']):
@@ -176,22 +157,16 @@ class Stitch(object):
             closestImage['desc'] = next_descs
             closestImage['match'] = matches_subset
 
-
-
         self.dir_list = filter(lambda x: x != closestImage['path'], self.dir_list)
-
         H = closestImage['h']
         H = H / H[2, 2]
         H_inv = linalg.inv(H)
 
         if (closestImage['inliers'] > 0.1):  # and
-
             (min_x, min_y, max_x, max_y) = self.findDimensions(closestImage['img'], H_inv)
-
             # Adjust max_x and max_y by base img size
             max_x = max(max_x, base_img.shape[1])
             max_y = max(max_y, base_img.shape[0])
-
             move_h = np.matrix(np.identity(3), np.float32)
 
             if (min_x < 0):
@@ -202,39 +177,25 @@ class Stitch(object):
                 move_h[1, 2] += -min_y
                 max_y += -min_y
 
-
-
             mod_inv_h = move_h * H_inv
-
             img_w = int(math.ceil(max_x))
             img_h = int(math.ceil(max_y))
 
-
-
             # crop edges
-
             base_h, base_w, base_d = base_img_rgb.shape
             next_h, next_w, next_d = closestImage['rgb'].shape
-
             base_img_rgb = base_img_rgb[5:(base_h - 5), 5:(base_w - 5)]
             closestImage['rgb'] = closestImage['rgb'][5:(next_h - 5), 5:(next_w - 5)]
-
             # Warp the new image given the homography from the old image
             base_img_warp = cv2.warpPerspective(base_img_rgb, move_h, (img_w, img_h))
-
-
             # utils.showImage(base_img_warp, scale=(0.2, 0.2), timeout=1000, save=True, title="base_img_warp")
             # cv2.destroyAllWindows()
-
             next_img_warp = cv2.warpPerspective(closestImage['rgb'], mod_inv_h, (img_w, img_h))
-
 
             # utils.showImage(next_img_warp, scale=(0.2, 0.2), timeout=1000, save=True, title="next_img_warp")
             # cv2.destroyAllWindows()
-
             # Put the base image on an enlarged palette
             enlarged_base_img = np.zeros((img_h, img_w, 3), np.uint8)
-
 
             # enlarged_base_img[y:y+base_img_rgb.shape[0],x:x+base_img_rgb.shape[1]] = base_img_rgb
             # enlarged_base_img[:base_img_warp.shape[0],:base_img_warp.shape[1]] = base_img_warp
