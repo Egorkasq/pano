@@ -4,7 +4,8 @@ import sys
 import cv2
 import time
 import skimage.io
-import timeit
+import json
+import gdal
 ROOT_DIR = os.path.abspath(".")
 sys.path.append(ROOT_DIR)
 sys.path.append(os.path.join(ROOT_DIR, "mrcnn/"))
@@ -23,22 +24,23 @@ image_path = os.path.abspath('./input_img')
 
 if __name__ == '__main__':
 
-
     """""""""""""""""""""""""""""""""""""""""""""""
     Create Map
     """""""""""""""""""""""""""""""""""""""""""""""
     #panorama.screen_video(videofile, image_path)
     panoram = panorama.create_panorama(image_path)
     cv2.imwrite('{}.jpg'.format('card'), panoram)
+    tif = panorama.bind_geo('card.jpg', root_dir)
+    #gdal.
 
+
+    '''    
     card = panorama.Map(panoram, tile_size=256)
     card.write_image_info()
     card.create_tiles()
     #print('the dist is ', panorama.get_distanse('1.JPG', 'IMG_0995.JPG'))
     #print('size card is;', card.card_size1())
-
-
-    '''
+    
     """""""""""""""""""""""""""""""""""""""""""""""
     Detect objects
     """""""""""""""""""""""""""""""""""""""""""""""

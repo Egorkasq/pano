@@ -5,6 +5,8 @@ import json
 import shutil
 import math
 import codecs
+import gdal
+import osr
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 root_dir = os.path.abspath('./result')
@@ -198,18 +200,21 @@ def screen_video(video_file, image_path, fps=15):
 def create_panorama(image_path):
 
     os.chdir(image_path)
+    good_matches = []
     paths = list(os.walk(image_path))
     folder = paths[0][2][0:]
     folder.sort()
     print('find {} images for stitching:{}'.format(len(folder), folder))
     base_image = cv2.imread(folder[0], 1)
-    folder.pop(0)
-    base_image_data = ImageMetaData(folder[0])
-    data = {
-        base_image_data, base_image_data.get_lat_lng(), '\n'
-    }
-    for file in folder:
 
+    base_image_data = ImageMetaData(folder[0])
+    data = [
+        folder[0], base_image.shape[0] // 2, base_image.shape[1] // 2, base_image_data.get_lat_lng()
+    ]
+    folder.pop(0)
+    for file in folder:
+        kef = 0           #max dist no more then 40% from the best point
+        good_matches = 20
         next_image = cv2.imread(file, 1)
         orb = cv2.ORB_create()
         kp1, des1 = orb.detectAndCompute(next_image, None)
@@ -217,8 +222,9 @@ def create_panorama(image_path):
         bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
         matches = bf.match(des1, des2)
         matches = sorted(matches, key=lambda x: x.distance)
-        matches = matches[:int(len(matches) * 0.4)]
-        assert len(matches) > 10
+
+        #matches = matches[:good_matches]
+        #assert len(matches) > 10
 
         dst_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
         src_pts = np.float32([kp2[m.trainIdx].pt for m in matches]).reshape(-1, 1, 2)
@@ -239,22 +245,28 @@ def create_panorama(image_path):
             next_image = next_image[:int(h1 - 0.5 * h1 + t[0] / 2), :w1]
         elif t[0] < 0:
             next_image = next_image[int(w1 - 0.5 * w1 + t[0] / 2):, :w1]
-        if t[1] > 0:
-            next_image = next_image[:h1, int(w1 - 0.5 * w1 + t[0] / 2):w1]
-        elif t[1] < 0:
-            next_image = next_image[:h1, :int(w1 - 0.5 * w1 + t[0] / 2)]
+        #if t[1] < 0:
+        #    next_image = next_image[:h1, int(w1 - 0.5 * w1 + t[0] / 2):w1]
+        #elif t[1] > 0:
+        #    next_image = next_image[:h1, :int(w1 - 0.5 * w1 + t[0] / 2)]
         h1, w1 = next_image.shape[:2]
         result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
         result[t[1]:h1 + t[1], t[0]:w1 + t[0]] = next_image
         crop(result)
+        #print(M[0][2])
+        #print(M[1][2])
 
         img_data = ImageMetaData(file)
-        img_data = {
-            img_data, img_data.get_lat_lng(), '\n'
-        }
-        print(type(data))
-        print(type(img_data))
-        data.union(img_data)
+        temp_y = base_image.shape[1] // 2 + M[0][2]
+        temp_x = base_image.shape[0] // 2 + M[1][2]
+
+        img_data = [
+            str(file),
+            int(temp_x),
+            int(temp_y),
+            img_data.get_lat_lng(),
+        ]
+        data = data + img_data
         base_image = result
 
     '''
@@ -264,33 +276,33 @@ def create_panorama(image_path):
     with open('points.json', 'w') as f:
         json.dump(point, f)
     '''
-
     os.chdir(root_dir)
     result = crop(result)
     result = resize(result, 256)
     print('map created {}'.format(result.shape))
-    json.dump(data, codecs.open('geo_info.json', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
+    json.dump(data, codecs.open('geo_info.txt', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
     return result
 
 
-def bind_geo(image_path, save_info=False):
+def bind_geo(image_temp, geo_json_dir):
     """
-    :return: .txt with geo loc every image
-    """
-    data = None
-    path = list(os.walk(image_path))
-    folder = path[0][2][0:]
-    folder.sort()
-    for image in folder:
-        image = ImageMetaData(image)
-        img_data = {
-            image, image.get_lat_lng(), '\n'
-        }
-        data += img_data
 
-    if save_info:
-        json.dump(data, codecs.open('geo_info.json', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
-    return 0
+    :param image_temp:
+    :param geo_json_dir:
+    :return:
+    x, y, long, lat
+    """
+    data = list()
+    image = gdal.Open(image_temp)
+    json_info = json.load(open(os.path.join(geo_json_dir, 'geo_info.txt')))
+    for i in range(0, len(json_info), 4):
+        print(json_info[i + 2], json_info[i + 1], 0, json_info[i + 3][1], json_info[i + 3][0])
+        gcplist = [gdal.GCP(json_info[i + 2], json_info[i + 1], 0, json_info[i + 3][0], json_info[i + 3][1])]
+        #gcplist = [gdal.GCP(json_info[i + 1][0], json_info[i + 1][1], 0, json_info[i + 2], json_info[i + 3])]
+        data = data + gcplist
+    image = gdal.Translate('{}.tif'.format(image_temp), image, outputSRS='EPSG:4326', format="GTiff", GCPs=data)
+    assert image is not None
+    return image
 
 
 def resize(image, tile_size):
@@ -340,4 +352,5 @@ def get_distanse(image1, image2):
         dist = math.acos(math.sin(math.radians(latlng_1[0])) * math.sin(math.radians(latlng_2[0])) +
                          math.cos(math.radians(latlng_1[0])) * math.cos(math.radians(latlng_2[0])) *
                          math.cos(math.radians(latlng_1[1] - latlng_2[1]))) * 6371 * 1000
-        return dist
+
+    return dist
