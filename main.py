@@ -2,10 +2,6 @@ import panorama
 import os
 import sys
 import cv2
-import time
-import skimage.io
-import json
-import gdal
 ROOT_DIR = os.path.abspath(".")
 sys.path.append(ROOT_DIR)
 sys.path.append(os.path.join(ROOT_DIR, "mrcnn/"))
