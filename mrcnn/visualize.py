@@ -33,6 +33,7 @@ root_dir = os.path.abspath('./result')
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn import utils
+import geo_point
 
 
 ############################################################
@@ -176,38 +177,35 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         plt.show()
 
 
-def save_detect_info(image, boxes, masks, track):
+def save_detect_info(image, boxes, masks):
     os.chdir(root_dir)
-    temp = []
-    coord = track
     N = boxes.shape[0]
-
+    geo_coord = []
     for i in range(N):
         mask = masks[:, :, i]
         padded_mask = np.zeros((mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
         padded_mask[1:-1, 1:-1] = mask
         contours = find_contours(padded_mask, 0.5)
         for verts in contours:
+            for j in verts:
+                geo_coord.append(geo_point.pixelOffset2coord(image, j[0], j[1]))
+            '''
             for j in range(verts.shape[0]):
                 for index in range(verts.shape[1]):
                     if index % 2 == 0:
                         verts[j][index] = 0 - verts[j][index]
                     else:
                         verts[j][index] = image.shape[1] - verts[j][index]
-            temp = temp + verts.tolist()
+            '''
+
     data = {
         "impassableAreas": [{
-            "type": "Area",
+            "type": "Polygon",
             "coordinates":
-                temp
-        }],
-
-        "platformTracks": [{
-            "type": "Point",
-            "coordinates":
-                coord
+                geo_coord
         }]
     }
+
     json.dump(data, codecs.open('detect_info.json', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
     print("detect info created")
 
@@ -272,7 +270,7 @@ def vizualize_polygons(image, masks):
 
     ax = fig.add_subplot(111)
     ax.plot(x,y, color = '#6699cc', alpha = 0.7)
-    ax.set_title('poligon')
+    ax.set_title('polygon')
     '''
     image2 = Image.new("RGB", (256, 256))
     draw = ImageDraw.Draw(image2)

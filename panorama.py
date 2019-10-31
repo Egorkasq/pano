@@ -24,6 +24,7 @@ class Map:
     def write_image_info(self):
         """
         save info about image in json format
+
         """
         data = {"tileSize": self.tile_size, "mapWidth": self.line,
                 "mapHeight": self.column, "maxZoom": self.zoom}
@@ -40,30 +41,11 @@ class Map:
         os.chdir(titles_path)
         for i in range(0, self.column, self.tile_size):
             for j in range(0, self.line, self.tile_size):
-                tempImg = self.image[i: i + self.tile_size, j: j + self.tile_size]
+                temp_img = self.image[i: i + self.tile_size, j: j + self.tile_size]
                 name = str(i // self.tile_size) + '_' + str(j // self.tile_size)
-                cv2.imwrite('{}.jpg'.format(str(name)), tempImg)
+                cv2.imwrite('{}.jpg'.format(str(name)), temp_img)
         os.chdir(root_dir)
         return 0
-
-    '''
-    def card_size1(self):
-        folder = []
-        map_size = []
-        average = 0
-        os.chdir(image_path1)
-        paths = list(os.walk(image_path1))
-        for image in paths[0][2][0:]:
-            folder.append(image)
-            meta_data = ImageMetaData(image)
-            latlng = meta_data.get_lat_lng()
-            average = average + latlng[2]
-        average = average / len(folder)
-        print('height{}'.format(average))
-        map_size.append(math.tan(math.radians(70.42 / 2)) * average * 2 * self.line / self.tile_size)
-        map_size.append(math.tan(math.radians(43.3 / 2)) * average * 2 * self.column / self.tile_size)
-        map_size
-    '''
 
     def card_size(self, image_path):
         folder = []
@@ -82,11 +64,12 @@ class Map:
         map_size.append(math.tan(math.radians(70.42 / 2)) * 2 * 162 / temp.shape[1] * self.line)
         return map_size
 
+
 class ImageMetaData(object):
-    '''
+    """
     Extract the exif data from any image. Data includes GPS coordinates,
     Focal Length, Manufacture, and more.
-    '''
+    """
     exif_data = None
     image = None
 
@@ -114,12 +97,14 @@ class ImageMetaData(object):
         self.exif_data = exif_data
         return exif_data
 
-    def get_if_exist(self, data, key):
+    @staticmethod
+    def get_if_exist(data, key):
         if key in data:
             return data[key]
         return None
 
-    def convert_to_degress(self, value):
+    @staticmethod
+    def convert_to_degress(value):
 
         """Helper function to convert the GPS coordinates
         stored in the EXIF to degress in float format"""
@@ -154,8 +139,8 @@ class ImageMetaData(object):
             gps_longitude_ref = self.get_if_exist(gps_info, 'GPSLongitudeRef')
             gps_altitude = self.get_if_exist(gps_info, 'GPSAltitude')
             gps_altitude_ref = self.get_if_exist(gps_info, 'GPSAltitudeRef')
-            #height = self.convert_to_degress(gps_altitude)
-            height = gps_altitude[0] // gps_altitude[1] / 10
+            # height = self.convert_to_degress(gps_altitude)
+            # height = gps_altitude[0] // gps_altitude[1]
 
             if gps_latitude and gps_latitude_ref and gps_longitude and gps_longitude_ref:
                 lat = self.convert_to_degress(gps_latitude)
@@ -165,10 +150,10 @@ class ImageMetaData(object):
                 if gps_longitude_ref != "E":
                     lng = 0 - lng
 
-        if height_:
-            return lat, lng, height
-        else:
-            return lat, lng
+        # if height_:
+        #    return lat, lng, height
+        # else:
+        return lat, lng
 
 
 def screen_video(video_file, image_path, fps=15):
@@ -238,21 +223,6 @@ def create_panorama(image_path):
         [xmax, ymax] = np.int32(pts.max(axis=0).ravel() + 0.5)
         t = [-xmin, -ymin]
         Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
-
-        if t[0] > 0:
-            next_image = next_image[:int(0.5 * (h1 + t[0])), :w1]
-            for i in range(1, len(data), 4):
-                data[i] = int(data[i] + t[0])
-        elif t[0] < 0:
-            next_image = next_image[int(0.5 * (h1 + t[0])):, :w1]
-
-        if t[1] > 0:
-            next_image = next_image[:h1, :int(0.5 * (w1 + t[0]))]
-            for i in range(1, len(data), 4):
-                data[i + 1] = int(data[i + 1] + t[1])
-        elif t[1] < 0:
-            next_image = next_image[:h1, int(0.5 * (w1 + t[0])):]
-
         result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
         result[t[1]:next_image.shape[0] + t[1], t[0]:next_image.shape[1] + t[0]] = next_image
 
@@ -263,17 +233,9 @@ def create_panorama(image_path):
             int((w1 + t[0]) // 2),
             img_data.get_lat_lng()
         ]
-
         data = data + img_data
         base_image = result
 
-    '''
-    if os.path.exists(root_dir):
-        shutil.rmtree(root_dir)
-    os.makedirs(root_dir)
-    with open('points.json', 'w') as f:
-        json.dump(point, f)
-    '''
     os.chdir(root_dir)
     result = crop(result)
     result = resize(result, 256)
@@ -283,7 +245,7 @@ def create_panorama(image_path):
     return result
 
 
-def bind_geo(image_temp, geo_json_dir):
+def georeferencer(image_temp, geo_json_dir):
     """
     :param image_temp:
     :param geo_json_dir:
@@ -295,10 +257,15 @@ def bind_geo(image_temp, geo_json_dir):
     json_info = json.load(open(os.path.join(geo_json_dir, 'geo_info.txt')))
     for i in range(0, len(json_info), 4):
         print(json_info[i], json_info[i + 2], json_info[i + 1], 0, json_info[i + 2], json_info[i + 3][0])
-        gcplist = [gdal.GCP(json_info[i + 3][0], json_info[i + 3][1], json_info[i + 3][2], json_info[i + 2], json_info[i + 1])]
+        # gcplist = [gdal.GCP(json_info[i + 3][0], json_info[i + 3][1],
+        # json_info[i + 3][2], json_info[i + 2], json_info[i + 1])]
+        gcplist = [gdal.GCP(json_info[i + 3][0], json_info[i + 3][1], 0, json_info[i + 2], json_info[i + 1])]
         data = data + gcplist
     image = gdal.Translate('{}.tif'.format(image_temp), image, outputSRS='EPSG:32632', format="GTiff", GCPs=data)
-    #gdal.wrapper_GDALWarpDestDS("EPSG:4326")
+    # gdal.WarpOptions(image, xRes=image.shape[1], yRes=image.shape[0], 'image1.gtiff')
+    # gdal.wrapper_GDALWarpDestDS("EPSG:4326")
+    # warpImage = gdal.Warp('warp_Image.tif', image)
+    # cv2.imwrite('{}.tif'.format(str(warpImage)), warpImage)
     assert image is not None
     return image
 

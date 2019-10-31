@@ -17,13 +17,11 @@ import numpy as np
 import skimage.draw
 import os
 import time
+from pycocotools.coco import COCO
 from pycocotools.cocoeval import COCOeval
 from pycocotools import mask as maskUtils
-from mrcnn import visualize
-from mrcnn.model import log
-import skimage
 
-#os.environ["CUDA_VI0'SIBLE_DEVICES"] = '
+os.environ["CUDA_VISIBLE_DEVICES"] = '0'
 
 # Root directory of the project
 ROOT_DIR = os.path.abspath(".")
@@ -34,7 +32,7 @@ from mrcnn.config import Config
 from mrcnn import model as modellib, utils
 
 # Path to trained weights file
-COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "mask_rcnn_coco.h5")
+COCO_WEIGHTS_PATH = os.path.join(ROOT_DIR, "/header/mask_rcnn_object_0089.h5")
 
 # Directory to save logs and model checkpoints, if not provided
 # through the command line argument --logs
@@ -51,7 +49,7 @@ class BalloonConfig(Config):
     Derives from the base Config class and overrides some values.
     """
     # Give the configuration a recognizable name
-    NAME = "object_"
+    NAME = "object"
     GPU_COUNT = 2
 
     # We use a GPU with 12GB memory, which can fit two images.
@@ -209,6 +207,88 @@ def train(model):
             epochs=120,
             layers='all')
 
+############################################################
+#  COCO Evaluation
+############################################################
+
+def build_coco_results(dataset, image_ids, rois, class_ids, scores, masks):
+    """Arrange resutls to match COCO specs in http://cocodataset.org/#format
+    """
+    # If no results, return an empty list
+    if rois is None:
+        return []
+
+    results = []
+    for image_id in image_ids:
+        # Loop through detections
+        for i in range(rois.shape[0]):
+            class_id = class_ids[i]
+            score = scores[i]
+            bbox = np.around(rois[i], 1)
+            mask = masks[:, :, i]
+
+            result = {
+                "image_id": image_id,
+                "category_id": dataset.get_source_class_id(class_id, "coco"),
+                "bbox": [bbox[1], bbox[0], bbox[3] - bbox[1], bbox[2] - bbox[0]],
+                "score": score,
+                "segmentation": maskUtils.encode(np.asfortranarray(mask))
+            }
+            results.append(result)
+    return results
+
+
+def evaluate_coco(model, dataset, coco, eval_type="bbox", limit=0, image_ids=None):
+    """Runs official COCO evaluation.
+    dataset: A Dataset object with valiadtion data
+    eval_type: "bbox" or "segm" for bounding box or segmentation evaluation
+    limit: if not 0, it's the number of images to use for evaluation
+    """
+    # Pick COCO images from the dataset
+    image_ids = image_ids or dataset.image_ids
+
+    # Limit to a subset
+    if limit:
+        image_ids = image_ids[:limit]
+
+    # Get corresponding COCO image IDs.
+    coco_image_ids = [dataset.image_info[id]["id"] for id in image_ids]
+
+    t_prediction = 0
+    t_start = time.time()
+
+    results = []
+    for i, image_id in enumerate(image_ids):
+        # Load image
+        image = dataset.load_image(image_id)
+
+        # Run detection
+        t = time.time()
+        r = model.detect([image], verbose=0)[0]
+        t_prediction += (time.time() - t)
+
+        # Convert results to COCO format
+        # Cast masks to uint8 because COCO tools errors out on bool
+        image_results = build_coco_results(dataset, coco_image_ids[i:i + 1],
+                                           r["rois"], r["class_ids"],
+                                           r["scores"],
+                                           r["masks"].astype(np.uint8))
+        results.extend(image_results)
+
+    # Load results. This modifies results with additional attributes.
+    coco_results = coco.loadRes(results)
+
+    # Evaluate
+    cocoEval = COCOeval(coco, coco_results, eval_type)
+    cocoEval.params.imgIds = coco_image_ids
+    cocoEval.evaluate()
+    cocoEval.accumulate()
+    cocoEval.summarize()
+
+    print("Prediction time: {}. Average {}/image".format(
+        t_prediction, t_prediction / len(image_ids)))
+    print("Total time: ", time.time() - t_start)
+
 
 
 ############################################################
@@ -220,37 +300,34 @@ if __name__ == '__main__':
 
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Train Mask R-CNN to detect balloons.')
+        description='Train Mask R-CNN on MS COCO.')
     parser.add_argument("command",
                         metavar="<command>",
-                        help="'train' or 'splash'")
-    parser.add_argument('--dataset', required=False,
-                        metavar="/path/to/balloon/dataset/",
-                        help='Directory of the Balloon dataset')
-    parser.add_argument('--weights', required=True,
+                        help="'train' or 'evaluate' on MS COCO")
+    parser.add_argument('--dataset', required=True,
+                        metavar="/path/to/coco/",
+                        help='Directory of the MS-COCO dataset')
+    parser.add_argument('--model', required=True,
                         metavar="/path/to/weights.h5",
                         help="Path to weights .h5 file or 'coco'")
     parser.add_argument('--logs', required=False,
                         default=DEFAULT_LOGS_DIR,
                         metavar="/path/to/logs/",
                         help='Logs and checkpoints directory (default=logs/)')
-    parser.add_argument('--image', required=False,
-                        metavar="path or URL to image",
-                        help='Image to apply the color splash effect on')
-    parser.add_argument('--video', required=False,
-                        metavar="path or URL to video",
-                        help='Video to apply the color splash effect on')
     parser.add_argument('--limit', required=False,
                         default=10,
                         metavar="<image count>",
-                        help='Images to use for evaluation (default=500)')
-    args = parser.parse_args()
+                        help='Images to use for evaluation (default=10)')
+    parser.add_argument('--download', required=False,
+                        default=False,
+                        metavar="<True|False>",
+                        help='Automatically download and unzip MS-COCO files (default=False)',
+                        type=bool)
 
     # Validate arguments
-    if args.command == "train":
-        assert args.dataset, "Argument --dataset is required for training"
-
-    print("Weights: ", args.weights)
+    args = parser.parse_args()
+    print("Command: ", args.command)
+    print("Model: ", args.model)
     print("Dataset: ", args.dataset)
     print("Logs: ", args.logs)
 
@@ -276,44 +353,33 @@ if __name__ == '__main__':
                                   model_dir=args.logs)
 
     # Select weights file to load
-    if args.weights.lower() == "coco":
-        weights_path = COCO_WEIGHTS_PATH
-        # Download weights file
-        if not os.path.exists(weights_path):
-            utils.download_trained_weights(weights_path)
-    elif args.weights.lower() == "last":
+    if args.model.lower() == "coco":
+        model_path = COCO_WEIGHTS_PATH
+    elif args.model.lower() == "last":
         # Find last trained weights
-        weights_path = model.find_last()
-    elif args.weights.lower() == "imagenet":
+        model_path = model.find_last()
+    elif args.model.lower() == "imagenet":
         # Start from ImageNet trained weights
-        weights_path = model.get_imagenet_weights()
+        model_path = model.get_imagenet_weights()
     else:
-        weights_path = args.weights
+        model_path = args.model
 
     # Load weights
-    print("Loading weights ", weights_path)
-    if args.weights.lower() == "coco":
-        # Exclude the last layers because they require a matching
-        # number of classes
-        model.load_weights(weights_path, by_name=True, exclude=[
-            "mrcnn_class_logits", "mrcnn_bbox_fc",
-            "mrcnn_bbox", "mrcnn_mask"])
-    else:
-        model.load_weights(weights_path, by_name=True)
+    # Load weights
+    print("Loading weights ", model_path)
+    model.load_weights(model_path, by_name=True)
 
     # Train or evaluate
     if args.command == "train":
         train(model)
-
     elif args.command == "evaluate":
         # Validation dataset
         dataset_val = BalloonDataset()
-        val_type = 'val'
-        coco = dataset_val.load_balloon(args.dataset, 'val')
+        val_type = "val"
+        coco = dataset_val.load_balloon(args.dataset, val_type)
         dataset_val.prepare()
         print("Running COCO evaluation on {} images.".format(args.limit))
-        evaluate_coco(model, dataset_val, coco, "segm", limit=int(args.limit))
+        evaluate_coco(model, dataset_val, coco, "bbox", limit=int(args.limit))
     else:
         print("'{}' is not recognized. "
               "Use 'train' or 'evaluate'".format(args.command))
-
