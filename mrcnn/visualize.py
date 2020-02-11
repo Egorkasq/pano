@@ -15,25 +15,28 @@ import colorsys
 import cv2
 import json
 import codecs
+
+import shapefile
 from matplotlib import pyplot
 from shapely.geometry.polygon import LinearRing, Polygon
-
 
 import numpy as np
 from skimage.measure import find_contours
 import matplotlib.pyplot as plt
-from matplotlib import patches,  lines
+from matplotlib import patches, lines
 from matplotlib.patches import Polygon
 import IPython.display
 
 # Root directory of the project
+import panorama
+
 ROOT_DIR = os.path.abspath("../")
 root_dir = os.path.abspath('./result')
 
 # Import Mask RCNN
 sys.path.append(ROOT_DIR)  # To find local version of the library
 from mrcnn import utils
-import geo_point
+
 
 
 ############################################################
@@ -51,19 +54,17 @@ def display_images(images, titles=None, cols=1, cmap=None, norm=None,
     interpolation: Optional. Image interpolation to use for display.
     """
     titles = titles if titles is not None else [""] * len(images)
-
-
     rows = len(images) // cols + 1
     plt.figure(figsize=(14, 14 * rows // cols))
     i = 1
     for image, title in zip(images, titles):
-        #plt.subplot(rows, cols, i)
+        # plt.subplot(rows, cols, i)
         plt.title(title, fontsize=9)
         plt.axis('off')
-        #plt.imshow(image.astype(np.uint8), cmap=cmap,
+        # plt.imshow(image.astype(np.uint8), cmap=cmap,
         #           norm=norm, interpolation=interpolation)
         i += 1
-    #plt.show()
+    # plt.show()
 
 
 def random_colors(N, bright=True):
@@ -109,6 +110,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     """
     # Number of instances
     N = boxes.shape[0]
+
     if not N:
         print("\n*** No instances to display *** \n")
     else:
@@ -141,8 +143,8 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         y1, x1, y2, x2 = boxes[i]
         if show_bbox:
             p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
-                                alpha=0.7, linestyle="dashed",
-                                edgecolor=color, facecolor='none')
+                                  alpha=0.7, linestyle="dashed",
+                                  edgecolor=color, facecolor='none')
             ax.add_patch(p)
 
         # Label
@@ -180,6 +182,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
 def save_detect_info(image, boxes, masks):
     os.chdir(root_dir)
     N = boxes.shape[0]
+    pix = []
     geo_coord = []
     for i in range(N):
         mask = masks[:, :, i]
@@ -188,25 +191,43 @@ def save_detect_info(image, boxes, masks):
         contours = find_contours(padded_mask, 0.5)
         for verts in contours:
             for j in verts:
-                geo_coord.append(geo_point.pixelOffset2coord(image, j[0], j[1]))
-            '''
-            for j in range(verts.shape[0]):
-                for index in range(verts.shape[1]):
-                    if index % 2 == 0:
-                        verts[j][index] = 0 - verts[j][index]
-                    else:
-                        verts[j][index] = image.shape[1] - verts[j][index]
-            '''
+                pix.append([j[0], j[1]])
 
-    data = {
-        "impassableAreas": [{
-            "type": "Polygon",
-            "coordinates":
-                geo_coord
-        }]
-    }
+        if len(pix) <= 100:
+            c = 4
+        elif 100 < len(pix) <= 200:
+            c = 6
+        elif 200 < len(pix) <= 400:
+            c = 8
+        elif 400 < len(pix) <= 1000:
+            c = 10
+        elif 1000 < len(pix) <= 1500:
+            c = 14
+        elif 1500 < len(pix) <= 2000:
+            c = 16
+        elif 2000 < len(pix) <= 4000:
+            c = 18
+        elif 4000 < len(pix) <= 6000:
+            c = 20
+        elif 6000 < len(pix) <= 8000:
+            c = 22
+        elif 6000 < len(pix):
+            c = 30
+        pix = pix[::len(pix) // c]
+        for i in pix:
+            geo_coord.append(panorama.pixelOffset2coord(image, i[1], i[0]))    #
+    geo_coord = [geo_coord]
+    w = shapefile.Writer('shapefile')
+    w.field('F_FLD', 'C', '10')
+    w.poly(geo_coord)
 
-    json.dump(data, codecs.open('detect_info.json', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
+    epsg = 'GEOGCS["WGS 84",'
+    epsg += 'DATUM["WGS_1984",'
+    epsg += 'SPHEROID["WGS 84",6378137,298.257223563]]'
+    epsg += ',PRIMEM["Greenwich",0],'
+    epsg += 'UNIT["degree",0.0174532925199433]]'
+    w.record('polygon')
+    w.close()
     print("detect info created")
 
 
@@ -259,7 +280,7 @@ def save_detect_info1(image, boxes, masks, track):
 def vizualize_polygons(image, masks):
     mask = masks[:, :, 0]
     padded_mask = np.zeros(
-            (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+        (mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
     padded_mask[1:-1, 1:-1] = mask
     contours = find_contours(padded_mask, 0.5)
     for verts in contours:
@@ -269,7 +290,7 @@ def vizualize_polygons(image, masks):
     x, y = p.exterior.xy
 
     ax = fig.add_subplot(111)
-    ax.plot(x,y, color = '#6699cc', alpha = 0.7)
+    ax.plot(x, y, color='#6699cc', alpha=0.7)
     ax.set_title('polygon')
     '''
     image2 = Image.new("RGB", (256, 256))
@@ -279,6 +300,7 @@ def vizualize_polygons(image, masks):
     draw.polygon((verts), fill=200)
     image2.show()
     '''
+
 
 def display_differences(image,
                         gt_box, gt_class_id, gt_mask,
@@ -293,8 +315,8 @@ def display_differences(image,
         pred_box, pred_class_id, pred_score, pred_mask,
         iou_threshold=iou_threshold, score_threshold=score_threshold)
     # Ground truth = green. Predictions = red
-    colors = [(0, 1, 0, .8)] * len(gt_match)\
-           + [(1, 0, 0, 1)] * len(pred_match)
+    colors = [(0, 1, 0, .8)] * len(gt_match) \
+             + [(1, 0, 0, 1)] * len(pred_match)
     # Concatenate GT and predictions
     class_ids = np.concatenate([gt_class_id, pred_class_id])
     scores = np.concatenate([np.zeros([len(gt_match)]), pred_score])
@@ -304,8 +326,8 @@ def display_differences(image,
     captions = ["" for m in gt_match] + ["{:.2f} / {:.2f}".format(
         pred_score[i],
         (overlaps[i, int(pred_match[i])]
-            if pred_match[i] > -1 else overlaps[i].max()))
-            for i in range(len(pred_match))]
+         if pred_match[i] > -1 else overlaps[i].max()))
+        for i in range(len(pred_match))]
     # Set title if not provided
     title = title or "Ground Truth and Detections\n GT=green, pred=red, captions: score/IoU"
     # Display
@@ -367,7 +389,7 @@ def draw_rois(image, rois, refined_rois, mask, class_ids, class_names, limit=10)
 
             # Mask
             m = utils.unmold_mask(mask[id], rois[id]
-                                  [:4].astype(np.int32), image.shape)
+            [:4].astype(np.int32), image.shape)
             masked_image = apply_mask(masked_image, m, color)
 
     ax.imshow(masked_image)
@@ -459,7 +481,7 @@ def plot_overlaps(gt_class_ids, pred_class_ids, pred_scores,
             text = "match" if gt_class_ids[j] == pred_class_ids[i] else "wrong"
         color = ("white" if overlaps[i, j] > thresh
                  else "black" if overlaps[i, j] > 0
-                 else "grey")
+        else "grey")
         plt.text(j, i, "{:.3f}\n{}".format(overlaps[i, j], text),
                  horizontalalignment="center", verticalalignment="center",
                  fontsize=9, color=color)

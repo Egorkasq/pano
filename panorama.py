@@ -8,9 +8,9 @@ import codecs
 import gdal
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
-root_dir = os.path.abspath('./result')
-video_path = os.path.abspath('./video')
-titles_path = os.path.abspath('./tiles')
+from osgeo import gdal
+from geojson import Polygon, MultiPolygon
+titles_path = os.path.abspath('.result/tiles')
 
 
 class Map:
@@ -21,14 +21,14 @@ class Map:
         self.tile_size = tile_size
         self.column, self.line = image.shape[:2]
 
-    def write_image_info(self):
+    def write_image_info(self, path):
         """
         save info about image in json format
 
         """
         data = {"tileSize": self.tile_size, "mapWidth": self.line,
                 "mapHeight": self.column, "maxZoom": self.zoom}
-        with open('info.json', 'w') as f:
+        with open(path + '/info.json', 'w') as f:
             json.dump(data, f)
 
     def create_tiles(self):
@@ -38,13 +38,13 @@ class Map:
         if os.path.exists(titles_path):
             shutil.rmtree(titles_path)
         os.makedirs(titles_path)
-        os.chdir(titles_path)
+
         for i in range(0, self.column, self.tile_size):
             for j in range(0, self.line, self.tile_size):
                 temp_img = self.image[i: i + self.tile_size, j: j + self.tile_size]
                 name = str(i // self.tile_size) + '_' + str(j // self.tile_size)
-                cv2.imwrite('{}.jpg'.format(str(name)), temp_img)
-        os.chdir(root_dir)
+                cv2.imwrite('/tiles/{}.jpg'.format(str(name)), temp_img)
+
         return 0
 
     def card_size(self, image_path):
@@ -169,28 +169,25 @@ def screen_video(video_file, image_path, fps=15):
     if os.path.exists(image_path):
         shutil.rmtree(image_path)
     os.makedirs(image_path)
-    os.chdir(image_path)
     while True:
         flag, img = cap.read()
         if flag == 0:
             break
         if c % fps == 0:
-            cv2.imwrite('{}/{:06d}.jpg'.format(image_path, name), img)
+            cv2.imwrite('./input_img/{:06d}.jpg'.format(name), img)
             name += 1
         c = c + 1
-    os.chdir(root_dir)
     return 0
 
 
-def create_panorama(image_path):
-
-    os.chdir(image_path)
+def create_panorama(image_path, write_info=False):
     paths = list(os.walk(image_path))
     folder = paths[0][2][0:]
     folder.sort()
     print('find {} images for stitching:{}'.format(len(folder), folder))
-    base_image = cv2.imread(folder[0], 1)
-    img_data = ImageMetaData(folder[0])
+    base_image = cv2.imread(image_path + folder[0], 1)
+
+    img_data = ImageMetaData(image_path + folder[0])
     data = [
         str(folder[0]),
         base_image.shape[0] // 2,
@@ -200,7 +197,7 @@ def create_panorama(image_path):
     folder.pop(0)
 
     for file in folder:
-        next_image = cv2.imread(file, 1)
+        next_image = cv2.imread(image_path + file, 1)
         orb = cv2.ORB_create()
         kp1, des1 = orb.detectAndCompute(next_image, None)
         kp2, des2 = orb.detectAndCompute(base_image, None)
@@ -226,7 +223,7 @@ def create_panorama(image_path):
         result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
         result[t[1]:next_image.shape[0] + t[1], t[0]:next_image.shape[1] + t[0]] = next_image
 
-        img_data = ImageMetaData(file)
+        img_data = ImageMetaData(image_path + file)
         img_data = [
             str(file),
             int((h1 + t[1]) // 2),
@@ -236,12 +233,11 @@ def create_panorama(image_path):
         data = data + img_data
         base_image = result
 
-    os.chdir(root_dir)
     result = crop(result)
     result = resize(result, 256)
-
     print('map created {}'.format(result.shape))
-    json.dump(data, codecs.open('geo_info.txt', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
+    json.dump(data, codecs.open('result/geo_info.txt', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
+
     return result
 
 
@@ -268,6 +264,32 @@ def georeferencer(image_temp, geo_json_dir):
     # cv2.imwrite('{}.tif'.format(str(warpImage)), warpImage)
     assert image is not None
     return image
+
+
+def coord2pixelOffset(rasterfn, x, y):
+    raster = gdal.Open(rasterfn)
+    geotransform = raster.GetGeoTransform()
+    originX = geotransform[0]
+    originY = geotransform[3]
+    pixelWidth = geotransform[1]
+    pixelHeight = geotransform[5]
+    xOffset = int((x - originX)/pixelWidth)
+    yOffset = int((y - originY)/pixelHeight)
+    result = [xOffset, yOffset]
+    return result
+
+
+def pixelOffset2coord(rasterfn, xOffset, yOffset):
+    raster = gdal.Open(rasterfn)
+    geotransform = raster.GetGeoTransform()
+    originX = geotransform[0]
+    originY = geotransform[3]
+    pixelWidth = geotransform[1]
+    pixelHeight = geotransform[5]
+    coordX = originX+pixelWidth*xOffset
+    coordY = originY+pixelHeight*yOffset
+    result = [coordX, coordY]
+    return result
 
 
 def resize(image, tile_size):
