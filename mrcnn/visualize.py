@@ -91,7 +91,7 @@ def apply_mask(image, mask, color, alpha=0.5):
     return image
 
 
-def display_instances(image, boxes, masks, class_ids, class_names,
+def display_instances(img, image, boxes, masks, class_ids, class_names,
                       scores=None, title="",
                       figsize=(16, 16), ax=None,
                       show_mask=True, show_bbox=True,
@@ -110,7 +110,6 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     """
     # Number of instances
     N = boxes.shape[0]
-
     if not N:
         print("\n*** No instances to display *** \n")
     else:
@@ -143,8 +142,8 @@ def display_instances(image, boxes, masks, class_ids, class_names,
         y1, x1, y2, x2 = boxes[i]
         if show_bbox:
             p = patches.Rectangle((x1, y1), x2 - x1, y2 - y1, linewidth=2,
-                                  alpha=0.7, linestyle="dashed",
-                                  edgecolor=color, facecolor='none')
+                                alpha=0.7, linestyle="dashed",
+                                edgecolor=color, facecolor='none')
             ax.add_patch(p)
 
         # Label
@@ -177,6 +176,7 @@ def display_instances(image, boxes, masks, class_ids, class_names,
     ax.imshow(masked_image.astype(np.uint8))
     if auto_show:
         plt.show()
+        plt.savefig('result/{}.png'.format(img), bbox_inches='tight')
 
 
 def save_detect_info(image, boxes, masks):

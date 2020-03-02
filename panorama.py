@@ -10,6 +10,7 @@ from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 from osgeo import gdal
 from geojson import Polygon, MultiPolygon
+from osgeo import gdal, osr
 titles_path = os.path.abspath('.result/tiles')
 
 
@@ -24,7 +25,6 @@ class Map:
     def write_image_info(self, path):
         """
         save info about image in json format
-
         """
         data = {"tileSize": self.tile_size, "mapWidth": self.line,
                 "mapHeight": self.column, "maxZoom": self.zoom}
@@ -164,17 +164,29 @@ def screen_video(video_file, image_path, fps=15):
     c = 0
     name = 0
     cap = cv2.VideoCapture(video_file)
-    assert os.path.exists(video_file)
 
     if os.path.exists(image_path):
         shutil.rmtree(image_path)
     os.makedirs(image_path)
+    flag, img = cap.read()
+    print(flag, len(img))
+    '''
+    for i in img:
+        if flag != 0:
+            print(i)
+            cv2.imwrite(image_path + '/{:06d}.jpg'.format(name), i)
+            name += 1
+            print(name)
+    '''
     while True:
         flag, img = cap.read()
         if flag == 0:
             break
+
         if c % fps == 0:
-            cv2.imwrite('./input_img/{:06d}.jpg'.format(name), img)
+            cv2.imwrite(image_path + '/{:06d}.jpg'.format(name), img)
+            print(len(img))
+            print(img)
             name += 1
         c = c + 1
     return 0
@@ -249,7 +261,6 @@ def georeferencer(image_temp, geo_json_dir):
     x, y, long, lat
     """
     data = list()
-    image = gdal.Open(image_temp)
     json_info = json.load(open(os.path.join(geo_json_dir, 'geo_info.txt')))
     for i in range(0, len(json_info), 4):
         print(json_info[i], json_info[i + 2], json_info[i + 1], 0, json_info[i + 2], json_info[i + 3][0])
@@ -257,13 +268,28 @@ def georeferencer(image_temp, geo_json_dir):
         # json_info[i + 3][2], json_info[i + 2], json_info[i + 1])]
         gcplist = [gdal.GCP(json_info[i + 3][0], json_info[i + 3][1], 0, json_info[i + 2], json_info[i + 1])]
         data = data + gcplist
-    image = gdal.Translate('{}.tif'.format(image_temp), image, outputSRS='EPSG:32632', format="GTiff", GCPs=data)
+    #gdal.Translate('{}.Gtiff'.format(image_temp.split('.')[0]), image, format="GTiff")
+    #gdal.Translate('{}_georeference.Gtiff'.format(image_temp.split('.')[0]), image, outputSRS='EPSG:32632', format="GTiff", GCPs=data)
+
+    src_ds = gdal.Open(image_temp)
+    format = "GTiff"
+    driver = gdal.GetDriverByName(format)
+    dst_ds = driver.CreateCopy(image_temp[:-4] + '_georeference', src_ds, 0)
+    gt = data
+    dst_ds.SetGeoTransform(gt)
+    epsg = 3857
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(epsg)
+    dest_wkt = srs.ExportToWkt()
+    dst_ds.SetProjection(dest_wkt)
+    # Close files
+    dst_ds = None
+    src_ds = None
+
     # gdal.WarpOptions(image, xRes=image.shape[1], yRes=image.shape[0], 'image1.gtiff')
     # gdal.wrapper_GDALWarpDestDS("EPSG:4326")
     # warpImage = gdal.Warp('warp_Image.tif', image)
     # cv2.imwrite('{}.tif'.format(str(warpImage)), warpImage)
-    assert image is not None
-    return image
 
 
 def coord2pixelOffset(rasterfn, x, y):
