@@ -5,7 +5,6 @@ import json
 import shutil
 import math
 import codecs
-import gdal
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 from osgeo import gdal
@@ -200,23 +199,28 @@ def create_panorama(image_path, write_info=False):
     base_image = cv2.imread(image_path + folder[0], 1)
 
     img_data = ImageMetaData(image_path + folder[0])
+    cent_y = int(base_image.shape[0] // 2)
+    cent_x = int(base_image.shape[1] // 2)
     data = [
         str(folder[0]),
-        base_image.shape[0] // 2,
-        base_image.shape[1] // 2,
+        cent_x,
+        cent_y,
         img_data.get_lat_lng()
         ]
     folder.pop(0)
 
     for file in folder:
         next_image = cv2.imread(image_path + file, 1)
+        next_image_resize = cv2.resize(next_image, (500, 500))
+        base_image_resize = cv2.resize(base_image, (500, 500))
         orb = cv2.ORB_create()
-        kp1, des1 = orb.detectAndCompute(next_image, None)
-        kp2, des2 = orb.detectAndCompute(base_image, None)
-        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True)
+        kp1, des1 = orb.detectAndCompute(next_image_resize, None)
+        kp2, des2 = orb.detectAndCompute(base_image_resize, None)
+        bf = cv2.BFMatcher(cv2.NORM_HAMMING, crossCheck=True, )
         matches = bf.match(des1, des2)
         matches = sorted(matches, key=lambda x: x.distance)
         matches = matches[:int(len(matches) * 0.5)]
+
         assert len(matches) > 10
 
         dst_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
@@ -231,19 +235,36 @@ def create_panorama(image_path, write_info=False):
         [xmin, ymin] = np.int32(pts.min(axis=0).ravel() - 0.5)
         [xmax, ymax] = np.int32(pts.max(axis=0).ravel() + 0.5)
         t = [-xmin, -ymin]
-        Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
-        result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
-        result[t[1]:next_image.shape[0] + t[1], t[0]:next_image.shape[1] + t[0]] = next_image
+        cv2.drawKeypoints(base_image, kp1, next_image)
 
-        img_data = ImageMetaData(image_path + file)
-        img_data = [
-            str(file),
-            int((h1 + t[1]) // 2),
-            int((w1 + t[0]) // 2),
-            img_data.get_lat_lng()
-        ]
-        data = data + img_data
-        base_image = result
+        for i in matches:
+            print(i.trainIdx, type(i.trainIdx0))
+        img3 = cv2.drawMatches(base_image_resize, kp1, next_image_resize, kp2, matches, base_image)
+        cv2.imwrite('hello.jpg', img3)
+        cv2.waitKey(0)
+        if t != [0, 0]:
+            Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
+            result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
+
+            next_image = next_image[:, :next_image.shape[1] // 4 * 3] if t[0] > 0 else \
+                next_image[:, next_image.shape[1] // 4:]
+            next_image = next_image[:next_image.shape[0] // 4 * 3, :] if t[0] > 0 else \
+                next_image[next_image.shape[0] // 4:, :]
+
+            result[t[1]:next_image.shape[0] + t[1], t[0]:next_image.shape[1] + t[0]] = next_image
+
+            img_data = ImageMetaData(image_path + file)
+            cent_x = cent_x + t[1]
+            cent_y = cent_y + t[0]
+            img_data = [
+                str(file),
+                int(cent_x),
+                int(cent_y),
+                img_data.get_lat_lng()
+            ]
+            data = data + img_data
+            base_image = result
+
 
     result = crop(result)
     result = resize(result, 256)
@@ -260,24 +281,25 @@ def georeferencer(image_temp, geo_json_dir):
     :return:
     x, y, long, lat
     """
+    src_ds = gdal.Open(image_temp)
     data = list()
     json_info = json.load(open(os.path.join(geo_json_dir, 'geo_info.txt')))
     for i in range(0, len(json_info), 4):
         print(json_info[i], json_info[i + 2], json_info[i + 1], 0, json_info[i + 2], json_info[i + 3][0])
-        # gcplist = [gdal.GCP(json_info[i + 3][0], json_info[i + 3][1],
-        # json_info[i + 3][2], json_info[i + 2], json_info[i + 1])]
+        # gcplist = [gdal.GCP(json_info[i + 3][0], json_info[i + 3][1], json_info[i + 3][2], json_info[i + 2], json_info[i + 1])]
         gcplist = [gdal.GCP(json_info[i + 3][0], json_info[i + 3][1], 0, json_info[i + 2], json_info[i + 1])]
         data = data + gcplist
-    #gdal.Translate('{}.Gtiff'.format(image_temp.split('.')[0]), image, format="GTiff")
-    #gdal.Translate('{}_georeference.Gtiff'.format(image_temp.split('.')[0]), image, outputSRS='EPSG:32632', format="GTiff", GCPs=data)
+    print(type(data), data)
 
-    src_ds = gdal.Open(image_temp)
+    gdal.Translate('{}.Gtiff'.format(image_temp.split('.')[0]), src_ds, format="GTiff")
+    gdal.Translate('{}_georeference.Gtiff'.format(image_temp.split('.')[0]), src_ds, outputSRS='EPSG:32632', format="GTiff", GCPs=data)
+
     format = "GTiff"
     driver = gdal.GetDriverByName(format)
-    dst_ds = driver.CreateCopy(image_temp[:-4] + '_georeference', src_ds, 0)
+    dst_ds = driver.CreateCopy(image_temp[:-4] + '_georeference2', src_ds, 0)
     gt = data
     dst_ds.SetGeoTransform(gt)
-    epsg = 3857
+    epsg = 32632
     srs = osr.SpatialReference()
     srs.ImportFromEPSG(epsg)
     dest_wkt = srs.ExportToWkt()
@@ -366,3 +388,15 @@ def get_distanse(image1, image2):
                          math.cos(math.radians(latlng_1[0])) * math.cos(math.radians(latlng_2[0])) *
                          math.cos(math.radians(latlng_1[1] - latlng_2[1]))) * 6371 * 1000
     return dist
+
+
+def tif2jpg(image):
+    if os.path.splitext(os.path.join(image))[1].lower() == ".tif":
+        outfile = os.path.splitext(os.path.join(image))[0] + ".jpg"
+        im = Image.open(os.path.join(image))
+        print("Generating jpeg for %s" % image)
+        im.thumbnail(im.size)
+        im.save(outfile, "JPG", quality=100)
+    else:
+        print("can't find {}".format(image))
+

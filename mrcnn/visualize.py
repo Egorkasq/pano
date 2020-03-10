@@ -175,7 +175,7 @@ def display_instances(img, image, boxes, masks, class_ids, class_names,
             ax.add_patch(p)
     ax.imshow(masked_image.astype(np.uint8))
     if auto_show:
-        plt.show()
+        # plt.show()
         plt.savefig('result/{}.png'.format(img), bbox_inches='tight')
 
 
@@ -217,7 +217,7 @@ def save_detect_info(image, boxes, masks):
         for i in pix:
             geo_coord.append(panorama.pixelOffset2coord(image, i[1], i[0]))    #
     geo_coord = [geo_coord]
-    w = shapefile.Writer('shapefile')
+    w = shapefile.Writer(str(image) + 'shapefile')
     w.field('F_FLD', 'C', '10')
     w.poly(geo_coord)
 
