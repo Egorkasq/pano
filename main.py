@@ -10,6 +10,7 @@ from mrcnn import visualize
 import matplotlib.image as mpimg
 
 if __name__ == '__main__':
+
     """""""""""""""""""""""""""""""""""""""""""""""
     Create Map
     """""""""""""""""""""""""""""""""""""""""""""""
@@ -17,6 +18,7 @@ if __name__ == '__main__':
     '''
     panoram = panorama.create_panorama('./image/')
     cv2.imwrite('result/{}.jpg'.format('card'), panoram)
+
     panorama.georeferencer('result/card.jpg', 'result')
     card = panorama.Map(panoram)
     card.write_image_info('.result')
@@ -48,19 +50,18 @@ if __name__ == '__main__':
     config = InferenceConfig()
     model = modellib.MaskRCNN(mode="inference", model_dir='./mrcnn/logs', config=config)
     model.load_weights('./mrcnn/heights/mask_rcnn_object_0250.h5', by_name=True)
-    # img_list = ['IMG_1537.JPG', 'DSC07495.JPG', 'IMG_0912.JPG', 'IMG_1540.JPG', 'IMG_0913.JPG']
-    img_list = ['odm_orthophoto.original.tif']
+    img_list = ['DSC07663.JPG']
+    # img_list = ['odm_orthophoto.original.tif']
 
     for img in img_list:
-        panorama.tif2jpg(img)
         image = mpimg.imread('./test_img/' + str(img))
         # Run object detection
         results = model.detect([image], verbose=1)
         r = results[0]
         visualize.display_instances(img, image, r['rois'], r['masks'], r['class_ids'],
                                     ['BG', 'tree', 'building'])
-    tif = gdal.Open('./result/odm_orthophoto.original.tif', 1)
-    visualize.save_detect_info(tif, r['rois'], r['masks'])
+    # tif = gdal.Open(', 1)
+    visualize.save_detect_info('/home/error/PycharmProjects/panorama/result/odm_orthophoto.original.tif', r['rois'], r['masks'])
     # track = [[-40, 15], [-250, 220], [-10, 600]]
 
 

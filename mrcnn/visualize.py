@@ -6,7 +6,7 @@ Copyright (c) 2017 Matterport, Inc.
 Licensed under the MIT License (see LICENSE for details)
 Written by Waleed Abdulla
 """
-
+import copy
 import os
 import sys
 import random
@@ -17,6 +17,7 @@ import json
 import codecs
 
 import shapefile
+
 from matplotlib import pyplot
 from shapely.geometry.polygon import LinearRing, Polygon
 
@@ -183,6 +184,7 @@ def save_detect_info(image, boxes, masks):
     os.chdir(root_dir)
     N = boxes.shape[0]
     pix = []
+    point = []
     geo_coord = []
     for i in range(N):
         mask = masks[:, :, i]
@@ -214,20 +216,32 @@ def save_detect_info(image, boxes, masks):
         elif 6000 < len(pix):
             c = 30
         pix = pix[::len(pix) // c]
-        for i in pix:
-            geo_coord.append(panorama.pixelOffset2coord(image, i[1], i[0]))    #
-    geo_coord = [geo_coord]
+        for k in pix:
+            geo_coord.append(panorama.pixelOffset2coord(image, k[1], k[0]))
+        point.append(copy.deepcopy(geo_coord))
+        geo_coord.clear()
+    point = [point]
+    temp = 0
     w = shapefile.Writer(str(image) + 'shapefile')
-    w.field('F_FLD', 'C', '10')
-    w.poly(geo_coord)
+    for k in point:
+        temp += 1
+        print(k)
+        w.field('F_FLD', 'C', '10')
+        print(type(k), k)
+        # w.poly(k)
+        w.record('polygon_{}'.format(temp))
+        w.close()
 
-    epsg = 'GEOGCS["WGS 84",'
-    epsg += 'DATUM["WGS_1984",'
-    epsg += 'SPHEROID["WGS 84",6378137,298.257223563]]'
-    epsg += ',PRIMEM["Greenwich",0],'
-    epsg += 'UNIT["degree",0.0174532925199433]]'
-    w.record('polygon')
-    w.close()
+
+        '''
+        epsg = 'GEOGCS["WGS 84",'
+        epsg += 'DATUM["WGS_1984",'
+        epsg += 'SPHEROID["WGS 84",6378137,298.257223563]]'
+        epsg += ',PRIMEM["Greenwich",0],'
+        epsg += 'UNIT["degree",0.0174532925199433]]'
+        '''
+
+
     print("detect info created")
 
 

@@ -211,8 +211,10 @@ def create_panorama(image_path, write_info=False):
 
     for file in folder:
         next_image = cv2.imread(image_path + file, 1)
-        next_image_resize = cv2.resize(next_image, (500, 500))
-        base_image_resize = cv2.resize(base_image, (500, 500))
+        # next_image_resize = cv2.resize(next_image, (500, 500))
+        next_image_resize = next_image
+        # base_image_resize = cv2.resize(base_image, (500, 500))
+        base_image_resize = base_image
         orb = cv2.ORB_create()
         kp1, des1 = orb.detectAndCompute(next_image_resize, None)
         kp2, des2 = orb.detectAndCompute(base_image_resize, None)
@@ -237,33 +239,31 @@ def create_panorama(image_path, write_info=False):
         t = [-xmin, -ymin]
         cv2.drawKeypoints(base_image, kp1, next_image)
 
-        for i in matches:
-            print(i.trainIdx, type(i.trainIdx0))
         img3 = cv2.drawMatches(base_image_resize, kp1, next_image_resize, kp2, matches, base_image)
         cv2.imwrite('hello.jpg', img3)
         cv2.waitKey(0)
-        if t != [0, 0]:
-            Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
-            result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
 
-            next_image = next_image[:, :next_image.shape[1] // 4 * 3] if t[0] > 0 else \
-                next_image[:, next_image.shape[1] // 4:]
-            next_image = next_image[:next_image.shape[0] // 4 * 3, :] if t[0] > 0 else \
-                next_image[next_image.shape[0] // 4:, :]
+        Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
+        result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
 
-            result[t[1]:next_image.shape[0] + t[1], t[0]:next_image.shape[1] + t[0]] = next_image
+       # next_image = next_image[:, :next_image.shape[1] // 4 * 3] if t[0] > 0 else \
+       #     next_image[:, next_image.shape[1] // 4:]
+       # next_image = next_image[:next_image.shape[0] // 4 * 3, :] if t[0] > 0 else \
+       #     next_image[next_image.shape[0] // 4:, :]
 
-            img_data = ImageMetaData(image_path + file)
-            cent_x = cent_x + t[1]
-            cent_y = cent_y + t[0]
-            img_data = [
-                str(file),
-                int(cent_x),
-                int(cent_y),
-                img_data.get_lat_lng()
-            ]
-            data = data + img_data
-            base_image = result
+        result[t[1]:next_image.shape[0] + t[1], t[0]:next_image.shape[1] + t[0]] = next_image
+
+        img_data = ImageMetaData(image_path + file)
+        cent_x = cent_x + t[1]
+        cent_y = cent_y + t[0]
+        img_data = [
+            str(file),
+            int(cent_x),
+            int(cent_y),
+            img_data.get_lat_lng()
+        ]
+        data = data + img_data
+        base_image = result
 
 
     result = crop(result)
