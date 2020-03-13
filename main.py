@@ -61,7 +61,7 @@ if __name__ == '__main__':
         visualize.display_instances(img, image, r['rois'], r['masks'], r['class_ids'],
                                     ['BG', 'tree', 'building'])
     # tif = gdal.Open(', 1)
-    visualize.save_detect_info('/home/error/PycharmProjects/panorama/result/odm_orthophoto.original.tif', r['rois'], r['masks'])
+    panorama.save_detect_info('/home/error/PycharmProjects/panorama/result/odm_orthophoto.original.tif', r['rois'], r['masks'])
     # track = [[-40, 15], [-250, 220], [-10, 600]]
 
 

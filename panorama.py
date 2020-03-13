@@ -1,15 +1,20 @@
+import copy
+
 import numpy as np
 import cv2
 import os
 import json
 import shutil
 import math
+from geopandas import GeoSeries
 import codecs
 from PIL import Image
 from PIL.ExifTags import TAGS, GPSTAGS
 from osgeo import gdal
 from geojson import Polygon, MultiPolygon
 from osgeo import gdal, osr
+from skimage.measure import find_contours
+import geopandas as gpd
 titles_path = os.path.abspath('.result/tiles')
 
 
@@ -222,7 +227,6 @@ def create_panorama(image_path, write_info=False):
         matches = bf.match(des1, des2)
         matches = sorted(matches, key=lambda x: x.distance)
         matches = matches[:int(len(matches) * 0.5)]
-
         assert len(matches) > 10
 
         dst_pts = np.float32([kp1[m.queryIdx].pt for m in matches]).reshape(-1, 1, 2)
@@ -237,12 +241,6 @@ def create_panorama(image_path, write_info=False):
         [xmin, ymin] = np.int32(pts.min(axis=0).ravel() - 0.5)
         [xmax, ymax] = np.int32(pts.max(axis=0).ravel() + 0.5)
         t = [-xmin, -ymin]
-        cv2.drawKeypoints(base_image, kp1, next_image)
-
-        img3 = cv2.drawMatches(base_image_resize, kp1, next_image_resize, kp2, matches, base_image)
-        cv2.imwrite('hello.jpg', img3)
-        cv2.waitKey(0)
-
         Ht = np.array([[1, 0, t[0]], [0, 1, t[1]], [0, 0, 1]])
         result = cv2.warpPerspective(base_image, Ht.dot(M), (xmax - xmin, ymax - ymin))
 
@@ -252,7 +250,6 @@ def create_panorama(image_path, write_info=False):
        #     next_image[next_image.shape[0] // 4:, :]
 
         result[t[1]:next_image.shape[0] + t[1], t[0]:next_image.shape[1] + t[0]] = next_image
-
         img_data = ImageMetaData(image_path + file)
         cent_x = cent_x + t[1]
         cent_y = cent_y + t[0]
@@ -293,7 +290,6 @@ def georeferencer(image_temp, geo_json_dir):
 
     gdal.Translate('{}.Gtiff'.format(image_temp.split('.')[0]), src_ds, format="GTiff")
     gdal.Translate('{}_georeference.Gtiff'.format(image_temp.split('.')[0]), src_ds, outputSRS='EPSG:32632', format="GTiff", GCPs=data)
-
     format = "GTiff"
     driver = gdal.GetDriverByName(format)
     dst_ds = driver.CreateCopy(image_temp[:-4] + '_georeference2', src_ds, 0)
@@ -336,7 +332,7 @@ def pixelOffset2coord(rasterfn, xOffset, yOffset):
     pixelHeight = geotransform[5]
     coordX = originX+pixelWidth*xOffset
     coordY = originY+pixelHeight*yOffset
-    result = [coordX, coordY]
+    result = (coordX, coordY)
     return result
 
 
@@ -399,4 +395,120 @@ def tif2jpg(image):
         im.save(outfile, "JPG", quality=100)
     else:
         print("can't find {}".format(image))
+
+
+def save_detect_info(image, boxes, masks):
+    N = boxes.shape[0]
+    pix = []
+    point = []
+    geo_coord = []
+    for i in range(N):
+        mask = masks[:, :, i]
+        padded_mask = np.zeros((mask.shape[0] + 2, mask.shape[1] + 2), dtype=np.uint8)
+        padded_mask[1:-1, 1:-1] = mask
+        contours = find_contours(padded_mask, 0.5)
+        for verts in contours:
+            for j in verts:
+                pix.append((j[0], j[1]))
+
+        if len(pix) <= 100:
+            c = 4
+        elif 100 < len(pix) <= 200:
+            c = 6
+        elif 200 < len(pix) <= 400:
+            c = 8
+        elif 400 < len(pix) <= 1000:
+            c = 10
+        elif 1000 < len(pix) <= 1500:
+            c = 14
+        elif 1500 < len(pix) <= 2000:
+            c = 16
+        elif 2000 < len(pix) <= 4000:
+            c = 18
+        elif 4000 < len(pix) <= 6000:
+            c = 20
+        elif 6000 < len(pix) <= 8000:
+            c = 22
+        elif 6000 < len(pix):
+            c = 30
+        pix = pix[::len(pix) // c]
+        for k in pix:
+            geo_coord.append(pixelOffset2coord(image, k[1], k[0]))
+        point.append(copy.deepcopy(geo_coord))
+        geo_coord.clear()
+    print(point)
+    poly = []
+    for i in point:
+        l = Polygon(i)
+        poly.append(l)
+
+    e = GeoSeries(poly)
+    e.to_file('shape.shp')
+    print("detect info created")
+
+    '''
+    w = shapefile.Writer(str(image) + 'shapefile')
+    for k in point:
+        temp += 1
+        print(k)
+        w.field('F_FLD', 'C', '10')
+        print(type(k), k)
+        # w.poly(k)
+        w.record('polygon_{}'.format(temp))
+        w.close()
+
+        epsg = 'GEOGCS["WGS 84",'
+        epsg += 'DATUM["WGS_1984",'
+        epsg += 'SPHEROID["WGS 84",6378137,298.257223563]]'
+        epsg += ',PRIMEM["Greenwich",0],'
+        epsg += 'UNIT["degree",0.0174532925199433]]'
+
+    '''
+
+
+def split_list(seq, num):
+    avg = len(seq) / float(num)
+    out = []
+    last = 0.0
+
+    while last < len(seq):
+        out.append(seq[int(last):int(last + avg)])
+        last += avg
+    return out
+
+'''
+def save_detect_info1(image, boxes, masks, track):
+    os.chdir(root_dir)
+    coord = track
+    temp = []
+    N = boxes.shape[0]
+    for i in range(N):
+        print(N)
+        if N == 0:
+            print("no instances to save ")
+            break
+        mask = masks[:, :, i]
+        for i in range(mask.shape[0]):
+            for j in range(1, mask.shape[1]):
+                if mask[i, j - 1] == True and mask[i, j] == False or mask[i, j - 1] == False and mask[i, j] == True:
+                    temp.append(i - image.shape[0])
+                    temp.append(j)
+
+    temp = split_list(temp, len(temp) / 2)
+    data = {
+        "impassableAreas": [{
+            "type": "Area",
+            "coordinates":
+                temp
+        }],
+
+        "platformTracks": [{
+            "type": "Point",
+            "coordinates":
+                coord
+        }]
+    }
+    json.dump(data, codecs.open('detect_info1.json', 'w', encoding='utf-8'), separators=(',', ':'), indent=4)
+    print("detect info created1")
+'''
 
