@@ -410,27 +410,26 @@ def save_detect_info(image, boxes, masks):
         for verts in contours:
             for j in verts:
                 pix.append((j[0], j[1]))
-
         if len(pix) <= 100:
-            c = 4
-        elif 100 < len(pix) <= 200:
-            c = 6
-        elif 200 < len(pix) <= 400:
             c = 8
-        elif 400 < len(pix) <= 1000:
-            c = 10
-        elif 1000 < len(pix) <= 1500:
-            c = 14
-        elif 1500 < len(pix) <= 2000:
+        elif 100 < len(pix) <= 200:
+            c = 12
+        elif 200 < len(pix) <= 400:
             c = 16
-        elif 2000 < len(pix) <= 4000:
-            c = 18
-        elif 4000 < len(pix) <= 6000:
+        elif 400 < len(pix) <= 1000:
             c = 20
+        elif 1000 < len(pix) <= 1500:
+            c = 28
+        elif 1500 < len(pix) <= 2000:
+            c = 32
+        elif 2000 < len(pix) <= 4000:
+            c = 36
+        elif 4000 < len(pix) <= 6000:
+            c = 40
         elif 6000 < len(pix) <= 8000:
-            c = 22
+            c = 44
         elif 6000 < len(pix):
-            c = 30
+            c = 60
         pix = pix[::len(pix) // c]
         for k in pix:
             geo_coord.append(pixelOffset2coord(image, k[1], k[0]))
@@ -439,31 +438,12 @@ def save_detect_info(image, boxes, masks):
     print(point)
     poly = []
     for i in point:
-        l = Polygon(i)
+        l = Polygon(i[1:])
         poly.append(l)
 
     e = GeoSeries(poly)
     e.to_file('shape.shp')
     print("detect info created")
-
-    '''
-    w = shapefile.Writer(str(image) + 'shapefile')
-    for k in point:
-        temp += 1
-        print(k)
-        w.field('F_FLD', 'C', '10')
-        print(type(k), k)
-        # w.poly(k)
-        w.record('polygon_{}'.format(temp))
-        w.close()
-
-        epsg = 'GEOGCS["WGS 84",'
-        epsg += 'DATUM["WGS_1984",'
-        epsg += 'SPHEROID["WGS 84",6378137,298.257223563]]'
-        epsg += ',PRIMEM["Greenwich",0],'
-        epsg += 'UNIT["degree",0.0174532925199433]]'
-
-    '''
 
 
 def split_list(seq, num):
